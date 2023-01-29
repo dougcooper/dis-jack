@@ -1,20 +1,24 @@
 from io import BytesIO
 from typing import Callable, TypeVar
-from opendis.PduFactory import createPdu
+from opendis.PduFactory import createPdu, PduTypeDecoders
 from opendis.dis7 import SignalPdu, EntityID
 from opendis.DataOutputStream import DataOutputStream
-from dis_jack.data_interface import AudioInterface, DataInterface
+from dis_jack.data_interface import AudioInterface, AsyncDataInterface
 import asyncio
 import audioop
 from dis_jack.utils import FLOAT_SIZE_BYTES, ByteFIFO
 
+
 class Address:
-    def __init__(self, ids: str):
-        data = ids.split(':')
-        self.site = data[0]
-        self.host = data[1]
-        self.entity = data[2]
-        self.radio = data[3]
+    def __init__(self, site=1, host=1, entity=1, radio=1):
+        self.site = site
+        self.host = host
+        self.entity = entity
+        self.radio = radio
+
+    @staticmethod
+    def from_pdu(pdu):
+        return Address(pdu.entityID.siteID, pdu.entityID.applicationID, pdu.entityID.entityID, pdu.radioID)
 
     def __str__(self) -> str:
         return f'{self.site}:{self.host}:{self.entity}:{self.radio}'
@@ -32,12 +36,16 @@ class Filter:
 
 
 class NotSignalPdu(Exception):
+    def __init__(self, pdu_type):
+        message = f'Received pdu type {PduTypeDecoders[pdu_type].__name__}'
+        super().__init__(message)
+
+class NotPdu(Exception):
     pass
 
 
 class MySignalPdu(SignalPdu, Filter):
-    def __init__(self, address: Address = Address("1:1:1:1")):
-        self._address = address
+    def __init__(self, address: Address = Address(1,1,1,1)):
         self.entityID = EntityID()
         self.entityID.siteID = address.site
         self.entityID.applicationID = address.host
@@ -45,15 +53,19 @@ class MySignalPdu(SignalPdu, Filter):
         self.radioID = address.radio
 
     @classmethod
-    def cast(cls, to_be_casted_obj):
+    def from_signalpdu(cls, to_be_casted_obj):
         casted_obj = cls()
-        casted_obj.__dict__ = to_be_casted_obj.__dict__
-        if casted_obj.pduType != 26:
-            raise NotSignalPdu()
+        if hasattr(to_be_casted_obj,'pduType'):
+            if to_be_casted_obj.pduType != 26:
+                raise NotSignalPdu(to_be_casted_obj.pduType)
+            else:
+                casted_obj.__dict__ = to_be_casted_obj.__dict__
+        else:
+            raise NotPdu()
         return casted_obj
 
     def address(self):
-        return self._address
+        return Address.from_pdu(self)
 
     def to_bytes(self):
         memoryStream = BytesIO()
@@ -63,7 +75,7 @@ class MySignalPdu(SignalPdu, Filter):
 
 
 class VirtualRadio:
-    def __init__(self, audio: AudioInterface, network: DataInterface):
+    def __init__(self, audio: AudioInterface, network: AsyncDataInterface):
         self.from_audio = audio.out_data
         self.to_audio = audio.in_data
         self.from_network = network.out_data
@@ -72,7 +84,8 @@ class VirtualRadio:
         self.pdu_samplerate = 8000  # TODO: make configurable
         self.pdu_sample_size_bytes = self.samples_per_pdu*FLOAT_SIZE_BYTES
         self.audio_samplerate = audio.samplerate()
-        self.address = Address('1:1:1:1')  # TODO: make configurable
+        self.address = Address(1,1,1,1)  # TODO: make configurable
+        self.rx_signal_pdu_count = 0
 
     async def _do_transmit(self):
         ''' Handle data from audio source'''
@@ -109,16 +122,18 @@ class VirtualRadio:
             data = await self.from_network.get()
             pdu = createPdu(data)
             try:
-                pdu = MySignalPdu.cast(pdu).filter(
+                pdu = MySignalPdu.from_signalpdu(pdu).filter(
                     lambda pdu: pdu.address() != self.address and pdu.encodingScheme == 1)
                 if pdu is not None:
-                    # 1 byte in assumed, 4 bytes out specified
-                    lin_data = audioop.ulaw2lin(pdu.data, FLOAT_SIZE_BYTES)
+                    self.rx_signal_pdu_count += 1
+                    lin_data = audioop.ulaw2lin(bytes(pdu.data), FLOAT_SIZE_BYTES)
                     resampled_data, resample_state = audioop.ratecv(
                         lin_data, FLOAT_SIZE_BYTES, 1, pdu.sampleRate, self.audio_samplerate, resample_state)
-                    self.to_audio.put_nowait(b''.join(resampled_data))
-            except (NotSignalPdu, asyncio.QueueFull) as err:
+                    await self.to_audio.put(resampled_data)
+                    # print(self.rx_signal_pdu_count)
+                    # print(f'buffer size to audio {self.to_audio.qsize()}')
+            except (NotSignalPdu,ValueError,asyncio.QueueFull) as err:
                 print(err)
 
     async def process(self):
-        await asyncio.gather(*[self._do_receive(),self._do_transmit()])
+        await asyncio.gather(*[self._do_receive(), self._do_transmit()])

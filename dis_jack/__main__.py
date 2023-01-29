@@ -2,7 +2,7 @@ import argparse
 import asyncio
 from dis_jack.utils import select
 from dis_jack.virt_radio import VirtualRadio
-from dis_jack.jack_interface import JackInterface
+from dis_jack.jack_interface import JackInterface,Direction
 from dis_jack.udp_interface import UdpInterface
 
 parser = argparse.ArgumentParser()
@@ -11,10 +11,12 @@ parser.add_argument('-s','--server',type=str,default='jack',required=False)
 parser.add_argument('-a','--autoconnect',action='store_true',default=False,required=False)
 parser.add_argument('--ip',type=str,default='127.0.0.1')
 parser.add_argument('--port',type=int,default=6993)
+parser.add_argument('-d','--dir',type=Direction,choices=list(Direction))
+#TODO: add dis frequency
 args = parser.parse_args()
 
 # jack = JackInterface(args.name,args.server)
-jack = JackInterface(args.name)
+jack = JackInterface(args.name,dir=args.dir)
 udp = UdpInterface()
 radio = VirtualRadio(jack,udp)
 
@@ -33,7 +35,7 @@ async def main():
     transport.close()
     
 if __name__ == "__main__":
-    with jack(args.autoconnect):      
+    with jack(args.autoconnect) as client:      
         print('Press Ctrl+C to stop')
         try:
             asyncio.run(main())

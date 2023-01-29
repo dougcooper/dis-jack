@@ -1,12 +1,18 @@
 from abc import ABC, abstractmethod
 import asyncio
+import queue
 
-class DataInterface(ABC):
+class AsyncDataInterface(ABC):
     def __init__(self):
         self.in_data = asyncio.Queue()
         self.out_data = asyncio.Queue()
         
-class AudioInterface(DataInterface):
+class SyncDataInterface(ABC):
+    def __init__(self):
+        self.in_data = queue.Queue()
+        self.out_data = queue.Queue()
+        
+class AudioInterface(AsyncDataInterface):
     @abstractmethod
     def samplerate(self):
         raise NotImplementedError()

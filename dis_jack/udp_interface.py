@@ -1,8 +1,8 @@
 import asyncio
-from dis_jack.data_interface import DataInterface
+from dis_jack.data_interface import AsyncDataInterface
 from dis_jack.utils import select
 
-class UdpInterface(DataInterface):
+class UdpInterface(AsyncDataInterface):
     def __init__(self):
         super().__init__()
         self._disconnected = asyncio.Event()
