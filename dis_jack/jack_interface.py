@@ -3,7 +3,7 @@ from jack import OwnPort
 import asyncio
 
 from dis_jack.data_interface import AudioInterface
-from dis_jack.utils import FLOAT_SIZE_BYTES, ArrayFIFO, ByteFIFO
+from dis_jack.utils import FLOAT_SIZE_BYTES, ArrayFIFO, ByteFIFO, ElapsedTimer
 from enum import Enum
 
 class Direction(Enum):
@@ -28,7 +28,7 @@ class JackInterface(AudioInterface):
         self.shutdown = asyncio.Event()
         self.buffer = ArrayFIFO('h')
         self.dir = dir
-        self.counts = {"no_data":0,"ne_data":0,"ok_data":0}
+        self.counts = {"no_data":0,"ok_data":0}
         if self.dir == Direction.IN or self.dir == Direction.IN_OUT:
             self.client.inports.register(f'input_1')
         
@@ -55,6 +55,7 @@ class JackInterface(AudioInterface):
             
             #process outputs
             for port in self.client.outports:
+                t = ElapsedTimer()
                 o_port: OwnPort = port
                 o_b = o_port.get_buffer()
                 data = bytes(bytearray(frames * FLOAT_SIZE_BYTES)) #null byte array
@@ -69,29 +70,16 @@ class JackInterface(AudioInterface):
                             data = ArrayFIFO('f',f_data).getvalue().tobytes()
                             self.counts["ok_data"]+=1
                             frames_processed = True
-                            # print(f'{len(self.buffer)} {frames}')
                         else:
                             #get some data
                             block=self.in_data.get_nowait() #array(S16_LE)
                             self.buffer.put(block)
-                            # self.counts["ne_data"]+=1
-                        
-                    # if len(self.buffer) >= frames:
-                    #     s_data = self.buffer.get(frames)
-                    #     f_data = [float(i) for i in s_data]
-                    #     data = ArrayFIFO('f',f_data).getvalue().tobytes()
-                    #     self.counts["ok_data"]+=1
-                    #     # print(f'{len(self.buffer)} {frames}')
-                    # else:
-                    #     block=self.in_data.get_nowait() #array(S16_LE)
-                    #     self.buffer.put(block)
-                    #     self.counts["ne_data"]+=1
                 except:
                     self.counts["no_data"]+=1
                 finally:
                     o_b[:] = data
                     
-                print(f'skip: {self.counts["no_data"]} sparse: {self.counts["ne_data"]} ok: {self.counts["ok_data"]}')
+                # print(f'{port.name}: skip->{self.counts["no_data"]} ok->{self.counts["ok_data"]} elapsed->{t.elapsed()}')
                     
     def __enter__(self):
         return self.client.__enter__()
