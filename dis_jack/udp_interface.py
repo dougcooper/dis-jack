@@ -22,6 +22,7 @@ class UdpInterface(AsyncDataInterface):
     def datagram_received(self,data,addr):
         try:
             self.out_data.put_nowait(data)
+            # print(self.out_data.qsize())
         except:
             print("udp out buffer full")
         

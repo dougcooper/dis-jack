@@ -6,8 +6,11 @@ from opendis.DataOutputStream import DataOutputStream
 from dis_jack.data_interface import AudioInterface, AsyncDataInterface
 import asyncio
 import audioop
-from dis_jack.utils import FLOAT_SIZE_BYTES, ByteFIFO
+from dis_jack.utils import FLOAT_SIZE_BYTES, ByteFIFO, ElapsedTimer
+from array import array
+from opentelemetry import trace
 
+tracer = trace.get_tracer(__name__)
 
 class Address:
     def __init__(self, site=1, host=1, entity=1, radio=1):
@@ -73,7 +76,6 @@ class MySignalPdu(SignalPdu, Filter):
         self.serialize(outputStream)
         return memoryStream.getvalue()
 
-
 class VirtualRadio:
     def __init__(self, audio: AudioInterface, network: AsyncDataInterface):
         self.from_audio = audio.out_data
@@ -85,7 +87,6 @@ class VirtualRadio:
         self.pdu_sample_size_bytes = self.samples_per_pdu*FLOAT_SIZE_BYTES
         self.audio_samplerate = audio.samplerate()
         self.address = Address(1,1,1,1)  # TODO: make configurable
-        self.rx_signal_pdu_count = 0
 
     async def _do_transmit(self):
         ''' Handle data from audio source'''
@@ -120,20 +121,25 @@ class VirtualRadio:
         resample_state = None
         while True:
             data = await self.from_network.get()
-            pdu = createPdu(data)
-            try:
-                pdu = MySignalPdu.from_signalpdu(pdu).filter(
-                    lambda pdu: pdu.address() != self.address and pdu.encodingScheme == 1)
-                if pdu is not None:
-                    self.rx_signal_pdu_count += 1
-                    lin_data = audioop.ulaw2lin(bytes(pdu.data), FLOAT_SIZE_BYTES)
-                    resampled_data, resample_state = audioop.ratecv(
-                        lin_data, FLOAT_SIZE_BYTES, 1, pdu.sampleRate, self.audio_samplerate, resample_state)
-                    await self.to_audio.put(resampled_data)
-                    # print(self.rx_signal_pdu_count)
-                    # print(f'buffer size to audio {self.to_audio.qsize()}')
-            except (NotSignalPdu,ValueError,asyncio.QueueFull) as err:
-                print(err)
+            with ElapsedTimer() as timer:
+                pdu = createPdu(data)
+                try:
+                    pdu = MySignalPdu.from_signalpdu(pdu).filter(
+                        lambda pdu: pdu.address() != self.address and pdu.encodingScheme == 1)
+                    if pdu is not None:
+                        # with tracer.start_as_current_span("do_receive") as rxspan:
+                        ulaw = array('b',pdu.data) #signed chars
+                        lin_data = audioop.ulaw2lin(ulaw.tobytes(), 2) #output as signed short
+                        resampled_data, resample_state = audioop.ratecv(
+                            lin_data, 2, 1, pdu.sampleRate, self.audio_samplerate, resample_state)
+                        out_data = array('h',[])
+                        out_data.frombytes(resampled_data)
+                        out_data.extend([0 for i in range(int(self.audio_samplerate/pdu.sampleRate*pdu.samples-len(out_data)))]) #pad if needed
+                        # print(f'pdu SR {pdu.sampleRate} audio SR {self.audio_samplerate} encoded data len {len(ulaw)} resampled data len {len(out_data)}')
+                        await self.to_audio.put(out_data)
+                except (NotSignalPdu,ValueError,asyncio.QueueFull) as err:
+                    print(err)
+                # print(f'{timer.elapsed()}')
 
     async def process(self):
         await asyncio.gather(*[self._do_receive(), self._do_transmit()])

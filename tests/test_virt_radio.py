@@ -1,5 +1,7 @@
 from dis_jack.virt_radio import Address,MySignalPdu, NotPdu, NotSignalPdu
 from opendis.dis7 import SignalPdu,EntityStatePdu
+import audioop
+import array
 import pytest
 
 @pytest.fixture
@@ -37,3 +39,13 @@ def test_signal_pdu_cast():
     with pytest.raises(NotSignalPdu) as err:
         pdu2 = EntityStatePdu()
         sig = MySignalPdu.from_signalpdu(pdu2)
+        
+def test_mu_law():
+    size = 2
+    invals = [-29,29,90,220,450,900,2000,4000,8100]
+    indata = array.array('h',invals)
+    ulaw = audioop.lin2ulaw(indata.tobytes(),size)
+    lin = audioop.ulaw2lin(ulaw,size)
+    outdata = array.array('h',lin)
+    outvals = outdata.tolist()
+    assert invals == outvals

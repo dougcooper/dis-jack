@@ -3,7 +3,7 @@ from jack import OwnPort
 import asyncio
 
 from dis_jack.data_interface import AudioInterface
-from dis_jack.utils import FLOAT_SIZE_BYTES, ByteFIFO
+from dis_jack.utils import FLOAT_SIZE_BYTES, ArrayFIFO, ByteFIFO
 from enum import Enum
 
 class Direction(Enum):
@@ -17,14 +17,18 @@ class Direction(Enum):
 class Port:
     def __init__(self):
         pass
+    
+class NotEnoughData(BaseException):
+    pass
 
 class JackInterface(AudioInterface):
     def __init__(self,name,server=None,dir:Direction = Direction.IN_OUT):
         super().__init__()
         self.client = jack.Client(name, servername=server)
         self.shutdown = asyncio.Event()
-        self.buffer = ByteFIFO()
+        self.buffer = ArrayFIFO('h')
         self.dir = dir
+        self.counts = {"no_data":0,"ne_data":0,"ok_data":0}
         if self.dir == Direction.IN or self.dir == Direction.IN_OUT:
             self.client.inports.register(f'input_1')
         
@@ -40,36 +44,55 @@ class JackInterface(AudioInterface):
             
         @self.client.set_process_callback
         def process(frames):
+            #process inputs
             for port in self.client.inports:
                 i_port: OwnPort = port
                 i_b = i_port.get_buffer()
                 try:
                     self.out_data.put_nowait(i_b[:])
-                except:
+                except (asyncio.QueueFull):
                     print("dropping samples")
             
+            #process outputs
             for port in self.client.outports:
                 o_port: OwnPort = port
                 o_b = o_port.get_buffer()
-                frame_byte_len = frames * FLOAT_SIZE_BYTES
+                data = bytes(bytearray(frames * FLOAT_SIZE_BYTES)) #null byte array
+                        
                 try:
-                    block=self.in_data.get_nowait()
-                    self.buffer.put(block)
-                    
-                    while len(self.buffer) > frame_byte_len:
-                        o_b[:] = bytes(self.buffer.get(frame_byte_len))
-                        print("added some audio")
-                    
-                    # buf_len = len(self.buffer)
-                    # if buf_len >= frame_byte_len:
-                    #     o_b[:] = bytes(self.buffer.get(frame_byte_len))
+                    frames_processed = False
+                    while not frames_processed:
+                        if len(self.buffer) >= frames:
+                            #we have enough data
+                            s_data = self.buffer.get(frames)
+                            f_data = [float(i) for i in s_data]
+                            data = ArrayFIFO('f',f_data).getvalue().tobytes()
+                            self.counts["ok_data"]+=1
+                            frames_processed = True
+                            # print(f'{len(self.buffer)} {frames}')
+                        else:
+                            #get some data
+                            block=self.in_data.get_nowait() #array(S16_LE)
+                            self.buffer.put(block)
+                            # self.counts["ne_data"]+=1
+                        
+                    # if len(self.buffer) >= frames:
+                    #     s_data = self.buffer.get(frames)
+                    #     f_data = [float(i) for i in s_data]
+                    #     data = ArrayFIFO('f',f_data).getvalue().tobytes()
+                    #     self.counts["ok_data"]+=1
+                    #     # print(f'{len(self.buffer)} {frames}')
                     # else:
-                    #     o_b[:buf_len] = bytes(self.buffer.getvalue())
-                    #     o_b[buf_len:] = bytes(bytearray(frame_byte_len-buf_len))
+                    #     block=self.in_data.get_nowait() #array(S16_LE)
+                    #     self.buffer.put(block)
+                    #     self.counts["ne_data"]+=1
                 except:
-                    # print("pushing silence to jack")
-                    o_b[:] = bytes(bytearray(frame_byte_len))
-    
+                    self.counts["no_data"]+=1
+                finally:
+                    o_b[:] = data
+                    
+                print(f'skip: {self.counts["no_data"]} sparse: {self.counts["ne_data"]} ok: {self.counts["ok_data"]}')
+                    
     def __enter__(self):
         return self.client.__enter__()
         
