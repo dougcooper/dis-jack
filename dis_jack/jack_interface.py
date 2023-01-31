@@ -28,7 +28,7 @@ class JackInterface(AudioInterface):
         self.shutdown = asyncio.Event()
         self.buffer = ArrayFIFO('h')
         self.dir = dir
-        self.counts = {"no_data":0,"ok_data":0}
+        self.counts = {"no_data":0,"ok_data":0,"ne_data":0}
         self.auto_connect = auto_connect
         if self.dir == Direction.IN or self.dir == Direction.IN_OUT:
             self.client.inports.register(f'input_1')
@@ -65,13 +65,13 @@ class JackInterface(AudioInterface):
                 o_b = o_port.get_buffer()
                 data = bytes(bytearray(frames * FLOAT_SIZE_BYTES)) #null byte array
                         
-                try:
+                try:                  
                     frames_processed = False
                     while not frames_processed:
                         if len(self.buffer) >= frames:
                             #we have enough data
                             s_data = self.buffer.get(frames)
-                            f_data = [float(i) for i in s_data]
+                            f_data = [float(i)/32767 for i in s_data]
                             data = ArrayFIFO('f',f_data).getvalue().tobytes()
                             self.counts["ok_data"]+=1
                             frames_processed = True
@@ -83,8 +83,8 @@ class JackInterface(AudioInterface):
                     self.counts["no_data"]+=1
                 finally:
                     o_b[:] = data
-                    
-                # print(f'{port.name}: skip->{self.counts["no_data"]} ok->{self.counts["ok_data"]} elapsed->{t.elapsed()}')
+
+                print(f'{port.name}: {self.counts}')
                     
     def __enter__(self):
         client = self.client.__enter__()
