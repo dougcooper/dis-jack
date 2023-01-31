@@ -35,6 +35,10 @@ class JackInterface(AudioInterface):
         
         if self.dir == Direction.OUT or self.dir == Direction.IN_OUT:
             self.client.outports.register(f'output_1')
+            
+        @self.client.set_xrun_callback
+        def xrun(delay):
+            print("An xrun occured, increase JACK's period size?")
         
         @self.client.set_shutdown_callback
         def shutdown(status, reason):
