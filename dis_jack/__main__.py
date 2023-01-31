@@ -32,7 +32,7 @@ cwd = os.getcwd()
 writer = AudioWriterExecutor({
         "dis_out": AudioRecorder(f'dis_{t}', cwd, 8000), 
         "audio_out": AudioRecorder(f'audio_{t}', cwd, 48000)
-        } if args.dump else None)
+        }) if args.dump else None
 if writer:
     radio = VirtualRadio(jack, udp, writer)
 else:
