@@ -52,7 +52,7 @@ class AudioWriterExecutor:
             writer.write(data)
         except KeyError:
             #we dont want side effects here
-            print(f"writer {name} does not exist")
+            pass
         
     def __enter__(self):
         for _,writer in self.writers.items():
