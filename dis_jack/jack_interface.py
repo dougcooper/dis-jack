@@ -22,13 +22,14 @@ class NotEnoughData(BaseException):
     pass
 
 class JackInterface(AudioInterface):
-    def __init__(self,name,server=None,dir:Direction = Direction.IN_OUT):
+    def __init__(self,name,auto_connect=True,server=None,dir:Direction = Direction.IN_OUT):
         super().__init__()
         self.client = jack.Client(name, servername=server)
         self.shutdown = asyncio.Event()
         self.buffer = ArrayFIFO('h')
         self.dir = dir
         self.counts = {"no_data":0,"ok_data":0}
+        self.auto_connect = auto_connect
         if self.dir == Direction.IN or self.dir == Direction.IN_OUT:
             self.client.inports.register(f'input_1')
         
@@ -82,32 +83,35 @@ class JackInterface(AudioInterface):
                 # print(f'{port.name}: skip->{self.counts["no_data"]} ok->{self.counts["ok_data"]} elapsed->{t.elapsed()}')
                     
     def __enter__(self):
-        return self.client.__enter__()
+        client = self.client.__enter__()
+        
+        if self.auto_connect:
+            self._connect()
+            
+        return client
         
     def __exit__(self):
         self.client.__exit__()
         
-    def __call__(self, autoconnect = False):
-        if autoconnect:
-            #FIXME: this throws an error when trying to autoconnect
-            if self.client.inports:
-                capture = self.client.get_ports(is_physical=True, is_output=True)
-                if not capture:
-                    raise RuntimeError('No physical capture ports')
+    def _connect(self):
+        if self.client.inports:
+            capture = self.client.get_ports(is_physical=True, is_output=True)
+            if not capture:
+                raise RuntimeError('No physical capture ports')
 
-                for src, dest in zip(capture, self.client.inports):
-                    self.client.connect(src, dest)
-            
-            if self.client.outports:
-                playback = self.client.get_ports(is_physical=True, is_input=True)
-                if not playback:
-                    raise RuntimeError('No physical playback ports')
+            for src, dest in zip(capture, self.client.inports):
+                print(f"connecting {src} to {dest}")
+                self.client.connect(src, dest)
+        
+        if self.client.outports:
+            playback = self.client.get_ports(is_physical=True, is_input=True)
+            if not playback:
+                raise RuntimeError('No physical playback ports')
 
-                for src, dest in zip(self.client.outports, playback):
-                    self.client.connect(src, dest)
-                
-        return self
-    
+            for src, dest in zip(self.client.outports, playback):
+                print(f"connecting {src} to {dest}")
+                self.client.connect(src, dest)
+                    
     def samplerate(self):
         return self.client.samplerate
         

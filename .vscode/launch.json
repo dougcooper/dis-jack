@@ -9,7 +9,8 @@
             "type": "python",
             "request": "launch",
             "module": "dis_jack",
-            "justMyCode": true
+            "justMyCode": true,
+            "args": ["-d","rx","-a"]
         }
     ]
 }

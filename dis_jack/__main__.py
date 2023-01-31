@@ -11,9 +11,9 @@ from dis_jack.udp_interface import UdpInterface
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-n', '--name', type=str,
-                    default='dis-jack', required=False)
+                    default='dis_jack', required=False)
 parser.add_argument('-s', '--server', type=str, default='jack', required=False)
-parser.add_argument('-a', '--autoconnect',
+parser.add_argument('-a', '--auto',
                     action='store_true', default=False, required=False)
 parser.add_argument('--ip', type=str, default='127.0.0.1')
 parser.add_argument('--port', type=int, default=6993)
@@ -24,7 +24,7 @@ parser.add_argument('--dump', action='store_true',
 args = parser.parse_args()
 
 # jack = JackInterface(args.name,args.server)
-jack = JackInterface(args.name, dir=args.dir)
+jack = JackInterface(args.name, auto_connect=args.auto, dir=args.dir)
 udp = UdpInterface()
 
 t = time.time()
@@ -54,7 +54,7 @@ async def main():
     transport.close()
 
 if __name__ == "__main__":
-    with jack(args.autoconnect) as client:
+    with jack as client:
         print('Press Ctrl+C to stop')
         try:
             asyncio.run(main())
