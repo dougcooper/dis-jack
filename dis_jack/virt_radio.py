@@ -134,10 +134,10 @@ class VirtualRadio:
                         writer.write("dis_out",lin_data)
                         resampled_data, resample_state = audioop.ratecv(
                             lin_data, 2, 1, pdu.sampleRate, self.audio_samplerate, resample_state)
-                        writer.write("audio_out",resampled_data)
                         out_data = array('h',[])
                         out_data.frombytes(resampled_data)
                         out_data.extend([0 for i in range(int(self.audio_samplerate/pdu.sampleRate*pdu.samples-len(out_data)))]) #pad if needed
+                        writer.write("audio_out",out_data.tobytes())
                         await self.to_audio.put(out_data)
                     else:
                         print("signal pdu not mine")
