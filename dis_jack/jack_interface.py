@@ -90,7 +90,7 @@ class JackInterface(AudioInterface):
             
         return client
         
-    def __exit__(self):
+    def __exit__(self,*args):
         self.client.__exit__()
         
     def _connect(self):
