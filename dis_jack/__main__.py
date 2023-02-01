@@ -17,7 +17,7 @@ parser.add_argument('-a', '--auto',
                     action='store_true', default=False, required=False)
 parser.add_argument('--ip', type=str, default='127.0.0.1')
 parser.add_argument('--port', type=int, default=6993)
-parser.add_argument('-d', '--dir', type=Direction, choices=list(Direction))
+parser.add_argument('-d', '--dir', type=Direction, choices=list(Direction),action='append')
 parser.add_argument('--dump', action='store_true',
                     default=False, required=False)
 # TODO: add dis frequency

@@ -1,3 +1,4 @@
+from typing import List
 import jack
 from jack import OwnPort
 import asyncio
@@ -9,7 +10,6 @@ from enum import Enum
 class Direction(Enum):
     IN = 'tx'
     OUT = 'rx'
-    IN_OUT = 'tx_rx'
     
     def __str__(self):
         return self.value
@@ -22,7 +22,7 @@ class NotEnoughData(BaseException):
     pass
 
 class JackInterface(AudioInterface):
-    def __init__(self,name,auto_connect=True,server=None,dir:Direction = Direction.IN_OUT):
+    def __init__(self,name,auto_connect=True,server=None,dir:List[Direction] = [Direction.IN,Direction.OUT]):
         super().__init__()
         self.client = jack.Client(name, servername=server)
         self.shutdown = asyncio.Event()
@@ -30,10 +30,10 @@ class JackInterface(AudioInterface):
         self.dir = dir
         self.counts = {"no_data":0,"ok_data":0,"ne_data":0}
         self.auto_connect = auto_connect
-        if self.dir == Direction.IN or self.dir == Direction.IN_OUT:
+        if Direction.IN in self.dir:
             self.client.inports.register(f'input_1')
         
-        if self.dir == Direction.OUT or self.dir == Direction.IN_OUT:
+        if Direction.OUT in self.dir:
             self.client.outports.register(f'output_1')
             
         @self.client.set_xrun_callback
@@ -119,4 +119,8 @@ class JackInterface(AudioInterface):
     def samplerate(self):
         return self.client.samplerate
         
+class Autoconnect:
+    def __init__(self,where: str = None):
+        self.to = where
+    
     
