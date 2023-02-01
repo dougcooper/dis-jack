@@ -3,7 +3,7 @@ from jack import OwnPort
 import asyncio
 
 from dis_jack.data_interface import AudioInterface
-from dis_jack.utils import FLOAT_SIZE_BYTES, ArrayFIFO, ByteFIFO, ElapsedTimer
+from dis_jack.utils import FLOAT_SIZE_BYTES, ArrayFIFO, ElapsedTimer
 from enum import Enum
 
 class Direction(Enum):
@@ -28,7 +28,7 @@ class JackInterface(AudioInterface):
         self.shutdown = asyncio.Event()
         self.buffer = ArrayFIFO('h')
         self.dir = dir
-        self.counts = {"no_data":0,"ok_data":0,"ne_data":0}
+        self.counts = {"to_jack":{"no_data":0,"ok_data":0},"from_jack":{"queue_full":0}}
         self.auto_connect = auto_connect
         if self.dir == Direction.IN or self.dir == Direction.IN_OUT:
             self.client.inports.register(f'input_1')
@@ -54,9 +54,12 @@ class JackInterface(AudioInterface):
                 i_port: OwnPort = port
                 i_b = i_port.get_buffer()
                 try:
-                    self.out_data.put_nowait(i_b[:])
+                    i_b_float = ArrayFIFO('f',i_b)
+                    i_b_scaled = [i*32767 for i in i_b_float.getvalue()]
+                    s_data = ArrayFIFO('h',i_b_scaled).getvalue().tobytes()
+                    self.out_data.put_nowait(s_data)
                 except (asyncio.QueueFull):
-                    print("dropping samples")
+                    self.counts["from_jack"]["queue_full"]+=1
             
             #process outputs
             for port in self.client.outports:
@@ -73,18 +76,18 @@ class JackInterface(AudioInterface):
                             s_data = self.buffer.get(frames)
                             f_data = [float(i)/32767 for i in s_data]
                             data = ArrayFIFO('f',f_data).getvalue().tobytes()
-                            self.counts["ok_data"]+=1
+                            self.counts["to_jack"]["ok_data"]+=1
                             frames_processed = True
                         else:
                             #get some data
                             block=self.in_data.get_nowait() #array(S16_LE)
                             self.buffer.put(block)
                 except:
-                    self.counts["no_data"]+=1
+                    self.counts["to_jack"]["no_data"]+=1
                 finally:
                     o_b[:] = data
 
-                print(f'{port.name}: {self.counts}')
+            print(f'{port.name}: {self.counts}')
                     
     def __enter__(self):
         client = self.client.__enter__()

@@ -83,7 +83,6 @@ class VirtualRadio:
         self.to_network = network.in_data
         self.samples_per_pdu = 512  # TODO: make configurable
         self.pdu_samplerate = 8000  # TODO: make configurable
-        self.pdu_sample_size_bytes = self.samples_per_pdu*FLOAT_SIZE_BYTES
         self.audio_samplerate = audio.samplerate()
         self.address = Address(1,1,1,1)  # TODO: make configurable
         self.writer = audio_writer
@@ -95,14 +94,15 @@ class VirtualRadio:
         buffer = ByteFIFO()
         resample_state = None
         while True:
-            block = await self.from_audio.get()
+            #TODO: would it be slightly more efficient to get an array of shorts rather than bytes?
+            block = await self.from_audio.get() #S16_LE
             buffer.put(block)
-            while len(buffer) > self.pdu_sample_size_bytes:
-                data = bytes(buffer.get(self.pdu_sample_size_bytes))
+            in_byte_len = self.samples_per_pdu*2
+            while len(buffer) > in_byte_len:
+                data = bytes(buffer.get(in_byte_len))
                 resampled_data, resample_state = audioop.ratecv(
-                    data, FLOAT_SIZE_BYTES, 1, self.audio_samplerate, self.pdu_samplerate, resample_state)
-                compressed_data = audioop.lin2ulaw(
-                    resampled_data, FLOAT_SIZE_BYTES)
+                    data, 2, 1, self.audio_samplerate, self.pdu_samplerate, resample_state)
+                compressed_data = audioop.lin2ulaw(resampled_data, 2)
                 pdu = MySignalPdu(self.address)
                 pdu.data = compressed_data
                 pdu.encodingScheme = 1  # voice + 8-bit mulaw
